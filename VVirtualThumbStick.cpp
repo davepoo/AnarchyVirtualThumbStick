@@ -6,13 +6,13 @@
  *
  */
 
-#include <Vision/Runtime/EnginePlugins/VisionEnginePlugin/VisionEnginePluginPCH.h>
-#include <Vision/Runtime/EnginePlugins/VisionEnginePlugin/Input/VVirtualThumbStick.hpp>
+#include "VVirtualThumbStick.hpp"
 
 #ifdef SUPPORTS_MULTITOUCH
 
-VVirtualThumbStick::VVirtualThumbStick(const VRectanglef& validArea, 
+Rts::VVirtualThumbStick::VVirtualThumbStick(const VRectanglef& validArea, 
   float fRelativeInitialX, float fRelativeInitialY,
+	float fPriority, bool bRightStick, 
   const char* szCirclePath, const char* szRingPath) 
   : m_iRingWidth(0), m_iRingHeight(0)
   , m_iCircleWidth(0), m_iCircleHeight(0)
@@ -26,6 +26,16 @@ VVirtualThumbStick::VVirtualThumbStick(const VRectanglef& validArea,
   , m_spTouchArea(NULL)
   , m_validArea()
   , m_iLastTouchPointIndex(-1)
+	, m_fPriority(fPriority)
+	, m_fAfterTouchSizeX(1.0f)
+	, m_fAfterTouchSizeY(1.0f)
+	, m_colorActive( V_RGBA_WHITE )
+	, m_colorInActive( 160, 160, 160, 160 )
+	, m_CTpadUp( CT_PAD_LEFT_THUMB_STICK_UP )
+	, m_CTpadDown( CT_PAD_LEFT_THUMB_STICK_DOWN )
+	, m_CTpadLeft( CT_PAD_LEFT_THUMB_STICK_LEFT )
+	, m_CTpadRight( CT_PAD_LEFT_THUMB_STICK_RIGHT )
+	, m_CTpadChanged( CT_PAD_LEFT_THUMB_STICK_CHANGED )
 {
   if (szCirclePath == NULL)
     szCirclePath = "GUI/circle.dds"; 
@@ -39,6 +49,16 @@ VVirtualThumbStick::VVirtualThumbStick(const VRectanglef& validArea,
   m_spRingMask->SetDepthWrite(false);
   m_spRingMask->SetTransparency(VIS_TRANSP_ALPHA);
 
+	//create as a right stick?
+	if ( bRightStick ) 
+	{
+		m_CTpadUp = CT_PAD_RIGHT_THUMB_STICK_UP;
+		m_CTpadDown = CT_PAD_RIGHT_THUMB_STICK_DOWN;
+		m_CTpadLeft = CT_PAD_RIGHT_THUMB_STICK_LEFT;
+		m_CTpadRight = CT_PAD_RIGHT_THUMB_STICK_RIGHT;
+		m_CTpadChanged = CT_PAD_RIGHT_THUMB_STICK_CHANGED;
+	}
+
   // Create touch input
   SetValidArea(validArea);
   
@@ -46,13 +66,13 @@ VVirtualThumbStick::VVirtualThumbStick(const VRectanglef& validArea,
   Show();
 }
 
-VVirtualThumbStick::~VVirtualThumbStick()
+Rts::VVirtualThumbStick::~VVirtualThumbStick()
 {
   // Deinit
   Hide();
 }
 
-void VVirtualThumbStick::SetValidArea(const VRectanglef& validArea)
+void Rts::VVirtualThumbStick::SetValidArea(const VRectanglef& validArea)
 {
   VRectanglef finalValidArea = validArea;
   if (!finalValidArea.IsValid())
@@ -74,7 +94,7 @@ void VVirtualThumbStick::SetValidArea(const VRectanglef& validArea)
       VInputManager::GetInputDevice(INPUT_DEVICE_TOUCHSCREEN));
     VASSERT(&inputDevice != &VInputManager::s_NoInputDevice);
 
-    m_spTouchArea = new VTouchArea(inputDevice, finalValidArea, -1500.0f);
+    m_spTouchArea = new VTouchArea(inputDevice, finalValidArea, m_fPriority);
   }
   else
   {
@@ -86,7 +106,7 @@ void VVirtualThumbStick::SetValidArea(const VRectanglef& validArea)
   Reset();
 }
 
-void VVirtualThumbStick::Reset()
+void Rts::VVirtualThumbStick::Reset()
 {
   m_fXValue = 0.0f;
   m_fYValue = 0.0f;
@@ -114,14 +134,14 @@ void VVirtualThumbStick::Reset()
     fInitialY - static_cast<float>(m_iCircleHeight / 2));
 }
   
-void VVirtualThumbStick::Update(float fTimeDiff)
+void Rts::VVirtualThumbStick::Update(float fTimeDiff)
 {
   if (!m_bActive)
     return;
   
   m_fTimeDiff = fTimeDiff;
   
-  VColorRef color = V_RGBA_WHITE;
+	VColorRef color = m_colorActive;
   int iTouchPointIndex = m_spTouchArea->GetTouchPointIndex();
   if (iTouchPointIndex >= 0)
   {
@@ -153,8 +173,8 @@ void VVirtualThumbStick::Update(float fTimeDiff)
     // initial valid area and has not been released.
     float fHalfWidth, fHalfHeight;
     m_spRingMask->GetTargetSize(fHalfWidth, fHalfHeight);
-    fHalfWidth *= 0.5f;
-    fHalfHeight *= 0.5f;
+    fHalfWidth *= 0.5f * m_fAfterTouchSizeX;
+    fHalfHeight *= 0.5f * m_fAfterTouchSizeY;
 
     const VRectanglef rect(
       fTouchPointX - fHalfWidth, 
@@ -167,7 +187,7 @@ void VVirtualThumbStick::Update(float fTimeDiff)
   {
     m_fXValue = 0.0f;
     m_fYValue = 0.0f;
-    color.SetRGBA(160, 160, 160, 160);
+		color.SetRGBA( m_colorInActive.r, m_colorInActive.g, m_colorInActive.b, m_colorInActive.a );
 
     // re-set to original area
     m_spTouchArea->SetArea(m_validArea);
@@ -186,7 +206,7 @@ void VVirtualThumbStick::Update(float fTimeDiff)
   m_spRingMask->SetColor(color);
 }
   
-void VVirtualThumbStick::Show(bool bShow)
+void Rts::VVirtualThumbStick::Show(bool bShow)
 {
   if (!bShow)
   {
@@ -206,7 +226,7 @@ void VVirtualThumbStick::Show(bool bShow)
   Vision::Callbacks.OnFrameUpdatePreRender += this;
 }
 
-void VVirtualThumbStick::Hide()
+void Rts::VVirtualThumbStick::Hide()
 {
   if (!m_bActive)
     return;
@@ -223,56 +243,52 @@ void VVirtualThumbStick::Hide()
   Vision::Callbacks.OnFrameUpdatePreRender -= this;
 }
 
-bool VVirtualThumbStick::IsActive()
+bool Rts::VVirtualThumbStick::IsActive()
 {
   return m_bActive;
 }
 
-int VVirtualThumbStick::GetRawControlValue(unsigned int uiControl)
+int Rts::VVirtualThumbStick::GetRawControlValue(unsigned int uiControl)
 {
-  switch (uiControl)
+  if ( uiControl == m_CTpadUp || uiControl == m_CTpadDown )
   {
-    case CT_PAD_LEFT_THUMB_STICK_UP:
-    case CT_PAD_LEFT_THUMB_STICK_DOWN:
-      return static_cast<int>(m_fYValue * 128);
-      
-    case CT_PAD_LEFT_THUMB_STICK_LEFT:
-    case CT_PAD_LEFT_THUMB_STICK_RIGHT:
-      return static_cast<int>(m_fXValue * 128);
+		return static_cast<int>(m_fYValue * 128);
+	}
+	else if ( uiControl == m_CTpadLeft || uiControl == m_CTpadRight )      
+	{
+		return static_cast<int>(m_fXValue * 128);
   }
   
   return 0;
 }
 
-float VVirtualThumbStick::GetControlValue(unsigned int uiControl, float fDeadZone, bool bTimeScaled)
+float Rts::VVirtualThumbStick::GetControlValue(unsigned int uiControl, float fDeadZone, bool bTimeScaled)
 {
   float fValue = 0.0f;
   
-  switch (uiControl)
-  {
-    case CT_PAD_LEFT_THUMB_STICK_UP:      
+  if (uiControl == m_CTpadUp)
+  {      
       if (m_fYValue <= 0.0f)
         fValue = -m_fYValue;
-      break;
-      
-    case CT_PAD_LEFT_THUMB_STICK_DOWN:      
+	} 
+	else if (uiControl ==  m_CTpadDown)
+	{
       if (m_fYValue >= 0.0f)
-        fValue = m_fYValue;
-      break;
-      
-    case CT_PAD_LEFT_THUMB_STICK_LEFT:      
+        fValue = m_fYValue;   
+	}
+	else if (uiControl ==  m_CTpadLeft)
+	{      
       if (m_fXValue <= 0.0f)
         fValue = -m_fXValue;
-      break;
-      
-    case CT_PAD_LEFT_THUMB_STICK_RIGHT:      
-      if (m_fXValue >= 0.0f)
-        fValue = m_fXValue;
-      break;
-      
-    case CT_PAD_LEFT_THUMB_STICK_CHANGED:
-      fValue = (m_fXValue != 0 || m_fYValue != 0) ? 1.0f : 0.0f;
-      break;
+	}
+	else if (uiControl ==  m_CTpadRight)
+	{   
+    if (m_fXValue >= 0.0f)
+      fValue = m_fXValue;
+	}
+	else if (uiControl ==  m_CTpadChanged)
+	{   
+		fValue = (m_fXValue != 0 || m_fYValue != 0) ? 1.0f : 0.0f;
   }
   
   if (fValue < fDeadZone)
@@ -287,12 +303,12 @@ float VVirtualThumbStick::GetControlValue(unsigned int uiControl, float fDeadZon
   
 }
 
-const char* VVirtualThumbStick::GetName()
+const char* Rts::VVirtualThumbStick::GetName()
 {
   return "VirtualThumbStick";
 }
 
-void VVirtualThumbStick::OnHandleCallback(IVisCallbackDataObject_cl *pData)
+void Rts::VVirtualThumbStick::OnHandleCallback(IVisCallbackDataObject_cl *pData)
 {
   // OnFrameUpdatePreRender
   if (pData->m_pSender == &Vision::Callbacks.OnFrameUpdatePreRender)
